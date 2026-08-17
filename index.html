@@ -439,7 +439,75 @@ footer.sig{margin-top:30px;padding-top:18px;border-top:1px solid var(--line);
 @media(prefers-reduced-motion:reduce){
   *{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
 }
+/* ===== indicador de nuvem ===== */
+.cloud{
+  display:inline-flex;align-items:center;gap:7px;padding:9px 13px;border-radius:999px;
+  border:1px solid var(--line);background:var(--glass);
+  font-size:10px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);
+  white-space:nowrap;user-select:none;
+}
+.cloud i{
+  width:7px;height:7px;border-radius:50%;background:var(--muted-2);flex:none;
+  box-shadow:0 0 0 3px rgba(110,101,91,.14);
+}
+.cloud.on{color:var(--sage);border-color:rgba(127,181,155,.34)}
+.cloud.on i{background:var(--sage);box-shadow:0 0 0 3px rgba(127,181,155,.16);animation:pulseDot 2.4s ease-in-out infinite}
+.cloud.off{color:var(--terra);border-color:rgba(217,105,74,.34)}
+.cloud.off i{background:var(--terra);box-shadow:0 0 0 3px rgba(217,105,74,.16)}
+.cloud.wait i{animation:pulseDot 1s ease-in-out infinite}
+@keyframes pulseDot{0%,100%{opacity:1}50%{opacity:.28}}
 </style>
+
+<!-- ==================================================================== -->
+<!--  CONFIGURAÇÃO DO FIREBASE — PREENCHA OS CAMPOS ABAIXO                -->
+<!--                                                                      -->
+<!--  Onde encontrar: console.firebase.google.com → seu projeto →         -->
+<!--  ⚙ Configurações do projeto → Seus apps → App da Web → SDK setup     -->
+<!--                                                                      -->
+<!--  Só funciona com o Realtime Database criado e com "databaseURL"      -->
+<!--  preenchido. Enquanto os campos estiverem como COLE_AQUI_... o app   -->
+<!--  continua funcionando normalmente, salvando apenas neste dispositivo.-->
+<!-- ==================================================================== -->
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+<script>
+window.COFRE_FIREBASE_CONFIG = {
+  apiKey:            "COLE_AQUI_apiKey",
+  authDomain:        "COLE_AQUI_authDomain",
+  databaseURL:       "COLE_AQUI_databaseURL",
+  projectId:         "COLE_AQUI_projectId",
+  storageBucket:     "COLE_AQUI_storageBucket",
+  messagingSenderId: "COLE_AQUI_messagingSenderId",
+  appId:             "COLE_AQUI_appId"
+};
+
+/* Nome do cofre no banco. Todos que abrirem este arquivo com a senha
+   compartilham este mesmo cofre. Troque se quiser um cofre separado. */
+window.COFRE_VAULT_ID = "cofre-principal";
+</script>
+
+<!-- ==================================================================== -->
+<!--  REGRAS DO REALTIME DATABASE (Console → Realtime Database → Regras)  -->
+<!--                                                                      -->
+<!--  A senha desta página é apenas visual: ela NÃO protege o banco.      -->
+<!--  Com as regras de teste abertas, qualquer pessoa com a databaseURL    -->
+<!--  pode ler e gravar seus lançamentos. Use ao menos um segredo no       -->
+<!--  caminho do cofre (COFRE_VAULT_ID longo e aleatório) e restrinja:     -->
+<!--                                                                      -->
+<!--  {                                                                   -->
+<!--    "rules": {                                                        -->
+<!--      "cofres": {                                                     -->
+<!--        "SEU_VAULT_ID_LONGO_E_ALEATORIO": {                            -->
+<!--          ".read": true,                                              -->
+<!--          ".write": true                                              -->
+<!--        }                                                             -->
+<!--      }                                                               -->
+<!--    }                                                                 -->
+<!--  }                                                                   -->
+<!--                                                                      -->
+<!--  Para proteção real, ative o Firebase Authentication e troque por     -->
+<!--  ".read": "auth != null" / ".write": "auth != null".                 -->
+<!-- ==================================================================== -->
 </head>
 <body>
 <!-- ==================== SPLASH ==================== -->
@@ -469,7 +537,7 @@ footer.sig{margin-top:30px;padding-top:18px;border-top:1px solid var(--line);
     </div>
     <button type="submit" class="btn-gold">Destrancar</button>
     <div class="lock-err" id="lockErr">Senha incorreta. Tente novamente.</div>
-    <div class="lock-hint">Acesso local · nada sai deste dispositivo</div>
+    <div class="lock-hint" id="lockHint">Acesso local · nada sai deste dispositivo</div>
   </form>
 </div>
 
@@ -485,6 +553,7 @@ footer.sig{margin-top:30px;padding-top:18px;border-top:1px solid var(--line);
       </div>
     </div>
     <div class="top-tools">
+      <div class="cloud wait" id="cloudBadge" title="Estado da sincronização"><i></i><span id="cloudTxt">Conectando…</span></div>
       <button class="ghost" id="btnCats">◈ Tipos de gasto</button>
       <button class="ghost" id="btnExport">↓ Exportar</button>
       <button class="ghost" id="btnImport">↑ Importar</button>
@@ -614,7 +683,7 @@ footer.sig{margin-top:30px;padding-top:18px;border-top:1px solid var(--line);
   </section>
 
   <footer class="sig">
-    <div>O Cofre · dados 100% locais</div>
+    <div id="sigMode">O Cofre · dados 100% locais</div>
     <div id="sigStamp">—</div>
   </footer>
 </main>
@@ -698,8 +767,12 @@ function load(key, fallback){
   catch(e){ return fallback; }
 }
 function save(key, val){
-  try{ localStorage.setItem(key, JSON.stringify(val)); return true; }
-  catch(e){ toast('Falha ao salvar localmente (armazenamento cheio ou bloqueado).','err'); return false; }
+  let ok = true;
+  try{ localStorage.setItem(key, JSON.stringify(val)); }
+  catch(e){ ok = false; toast('Falha ao salvar localmente (armazenamento cheio ou bloqueado).','err'); }
+  // espelha no Firebase (ignorado enquanto aplicamos dados vindos da nuvem)
+  if(!CLOUD.applying) cloudPush();
+  return ok;
 }
 function toast(msg, kind){
   const box = $('#toasts');
@@ -730,9 +803,161 @@ const catById = id => cats.find(c => c.id === id);
 const catName = id => { const c = catById(id); return c ? c.name : 'Sem tipo'; };
 const catColor= id => { const c = catById(id); return c ? c.color : '#6E655B'; };
 
+/* ============================================================
+   ================= FIREBASE REALTIME DATABASE ===============
+   Firebase é a fonte da verdade; localStorage funciona como
+   cache para abrir offline. Toda gravação local é espelhada
+   na nuvem, e toda mudança na nuvem repinta a tela.
+   ============================================================ */
+const CLOUD = {
+  ready:false,      // conectado e primeiro snapshot recebido
+  applying:false,   // aplicando dados da nuvem (evita eco de gravação)
+  ref:null,         // referência do cofre no banco
+  rev:0,            // revisão local, usada para desempate
+  pending:false,    // há gravação aguardando conexão
+  disabled:false    // config não preenchida ou SDK ausente
+};
+
+function cloudBadge(state, txt){
+  const b = $('#cloudBadge'), t = $('#cloudTxt');
+  if(!b || !t) return;
+  b.classList.remove('on','off','wait');
+  if(state) b.classList.add(state);
+  t.textContent = txt;
+  b.title = state === 'on'  ? 'Sincronizado com o Firebase Realtime Database'
+          : state === 'off' ? 'Sem sincronização — os dados ficam apenas neste dispositivo'
+          : 'Conectando ao Firebase…';
+}
+
+/* true somente se todos os campos foram preenchidos de verdade */
+function cloudConfigured(){
+  const c = window.COFRE_FIREBASE_CONFIG;
+  if(!c || typeof c !== 'object') return false;
+  const need = ['apiKey','databaseURL','projectId','appId'];
+  return need.every(k => {
+    const v = c[k];
+    return typeof v === 'string' && v.trim() && v.indexOf('COLE_AQUI') < 0;
+  }) && /^https?:\/\//.test(String(c.databaseURL).trim());
+}
+function cloudInit(){
+  if(!cloudConfigured()){
+    CLOUD.disabled = true;
+    cloudBadge('off','Somente local');
+    return;
+  }
+  if(typeof firebase === 'undefined' || !firebase.database){
+    CLOUD.disabled = true;
+    cloudBadge('off','SDK indisponível');
+    toast('Firebase não carregou. Verifique sua conexão.','err');
+    return;
+  }
+  try{
+    if(!firebase.apps.length) firebase.initializeApp(window.COFRE_FIREBASE_CONFIG);
+    const hint = $('#lockHint');
+    if(hint) hint.textContent = 'Sincronizado na nuvem · Firebase';
+    const sig = $('#sigMode');
+    if(sig) sig.textContent = 'O Cofre · sincronizado via Firebase';
+    const vault = String(window.COFRE_VAULT_ID || 'cofre-principal').replace(/[.#$\[\]\/]/g,'-');
+    const db = firebase.database();
+    CLOUD.ref = db.ref('cofres/' + vault);
+
+    // estado da conexão
+    db.ref('.info/connected').on('value', snap => {
+      if(snap.val() === true){
+        cloudBadge('on', CLOUD.ready ? 'Sincronizado' : 'Conectado');
+        if(CLOUD.pending) cloudPush();   // reenvia o que ficou pendente offline
+      } else {
+        cloudBadge('wait','Reconectando…');
+      }
+    });
+
+    // escuta em tempo real: qualquer aparelho que gravar repinta esta tela
+    CLOUD.ref.on('value', snap => {
+      const remote = snap.val();
+      if(remote && (Array.isArray(remote.expenses) || Array.isArray(remote.categories))){
+        cloudApply(remote);
+      } else if(!CLOUD.ready){
+        // cofre vazio na nuvem: sobe o que já existe neste aparelho
+        CLOUD.ready = true;
+        cloudPush();
+      }
+      CLOUD.ready = true;
+      cloudBadge('on','Sincronizado');
+    }, err => {
+      CLOUD.disabled = true;
+      cloudBadge('off','Sem permissão');
+      toast('Firebase recusou a leitura: ' + (err && err.code ? err.code : 'erro') + '. Revise as regras do banco.','err');
+    });
+  }catch(e){
+    CLOUD.disabled = true;
+    cloudBadge('off','Erro de config');
+    toast('Configuração do Firebase inválida. Confira os campos no topo do arquivo.','err');
+  }
+}
+function cloudApply(remote){
+  // dado remoto é tratado como não confiável: mesmo saneamento do import
+  const inCats = Array.isArray(remote.categories) ? remote.categories : null;
+  const inItems= Array.isArray(remote.expenses)   ? remote.expenses   : [];
+
+  const nextCats = (inCats && inCats.length ? inCats : DEFAULT_CATS.slice())
+    .filter(c => c && c.id && c.name)
+    .map(c => ({ id:String(c.id), name:String(c.name), color:c.color || PALETTE[0] }));
+  if(!nextCats.length) nextCats.push.apply(nextCats, DEFAULT_CATS.slice());
+
+  const nextItems = inItems
+    .filter(it => it && typeof it.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(it.date) && isFinite(+it.value))
+    .map(it => ({
+      id:String(it.id || uid()), desc:String(it.desc || ''),
+      cat:String(it.cat || nextCats[0].id), value:+it.value,
+      date:it.date, createdAt:it.createdAt || Date.now()
+    }));
+  nextItems.forEach(it => { if(!nextCats.some(c => c.id === it.cat)) it.cat = nextCats[0].id; });
+
+  // nada mudou? não repinta (evita piscar a tela a cada eco do próprio push)
+  const same = JSON.stringify(nextItems) === JSON.stringify(items) &&
+               JSON.stringify(nextCats)  === JSON.stringify(cats);
+  if(same) return;
+
+  CLOUD.applying = true;              // impede que save() reenvie para a nuvem
+  cats = nextCats; items = nextItems;
+  save(K_CATS, cats); save(K_DATA, items);
+  CLOUD.applying = false;
+
+  if(typeof remote.rev === 'number') CLOUD.rev = remote.rev;
+
+  // repinta apenas se o app já está aberto (destrancado)
+  if($('#app').classList.contains('on')){
+    renderCatOptions();
+    if($('#catModal').classList.contains('on')) renderCatList();
+    renderAll();
+  }
+}
+let pushTimer = null;
+function cloudPush(){
+  if(CLOUD.disabled || !CLOUD.ref) return;
+  CLOUD.pending = true;
+  clearTimeout(pushTimer);
+  // agrupa gravações em rajada (ex.: excluir tipo mexe em cats e items)
+  pushTimer = setTimeout(() => {
+    if(!CLOUD.ref) return;
+    CLOUD.rev++;
+    CLOUD.ref.set({
+      app:'O Cofre', version:1, rev:CLOUD.rev,
+      categories:cats, expenses:items,
+      updatedAt: firebase.database.ServerValue.TIMESTAMP
+    }).then(() => {
+      CLOUD.pending = false;
+    }).catch(err => {
+      cloudBadge('off','Falha ao salvar');
+      toast('Não foi possível salvar na nuvem: ' + (err && err.code ? err.code : 'erro') + '.','err');
+    });
+  }, 220);
+}
+
 /* ================= SPLASH + SENHA ================= */
 function boot(){
   const splash = $('#splash');
+  cloudInit();                 // conecta durante a splash
   setTimeout(()=>{
     splash.classList.add('out');
     setTimeout(()=>{ splash.style.display = 'none'; }, 620);
